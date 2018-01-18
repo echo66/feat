@@ -83,11 +83,7 @@
  cd /home/travis/build/lacava/fewtwo
  pwd
  
- wget https://bitbucket.org/eigen/eigen/get/3.3-beta2.tar.bz2 -O /tmp/eigen.tar.bz2
- mkdir eigen3-src && tar -xvjf /tmp/eigen.tar.bz2 -C eigen3-src --strip-components 1
- cd eigen3-src && mkdir build && cd build && cmake .. && sudo make install && cd ../..
- 
- # sudo apt-get install libeigen3-dev
+ sudo apt-get install libeigen3-dev
 
  #sudo wget "http://bitbucket.org/eigen/eigen/get/3.3.4.tar.gz"
  #sudo tar xvzf 3.3.4.tar.gz
