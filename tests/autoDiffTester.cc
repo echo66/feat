@@ -47,6 +47,8 @@
 /**
 Notes
 Add import from util for 2d Gauss
+Cost function pointer
+Keep best weights at end
 **/
 
 using namespace std;

@@ -39,8 +39,7 @@ namespace FT{
                 this->push_back(p->clone());
             return *this; 
         }        
-        NodeVector& operator=(NodeVector && other) = default;
-         
+        NodeVector& operator=(NodeVector && other) = default;         
 
     }; //NodeVector
 } // FT

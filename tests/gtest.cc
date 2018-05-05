@@ -59,7 +59,7 @@ bool checkBrackets(string str)
 		}
 	}
 	return true;
-} 
+}
 
 TEST(Feat, SettingFunctions)
 {

@@ -12,7 +12,6 @@ namespace FT{
     	public:
     		std::vector<double> W;
             
-    	
     		virtual ~NodeDx(){}
 
     		virtual ArrayXd getDerivative(vector<ArrayXd>& stack_f, int loc) = 0;
@@ -24,7 +23,7 @@ namespace FT{
 
             void update(vector<ArrayXd>& gradients, vector<ArrayXd>& stack_f, double n) 
             {
-                std::cout << "***************************\n";
+                std::cout << "+++++++++++++++++++++++++++++\n";
                 std::cout << "Updating " << this->name << "\n";
                 ArrayXd update_value = ArrayXd::Ones(stack_f[0].size());
                 for(ArrayXd g : gradients) {
@@ -44,7 +43,7 @@ namespace FT{
                 }
                 this->W = W_temp;
                 std::cout << "Updated\n";
-                std::cout << "***************************\n";
+                std::cout << "+++++++++++++++++++++++++++++\n";
                 // print_weight();
             }
 
