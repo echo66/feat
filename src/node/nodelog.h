@@ -5,8 +5,6 @@ license: GNU/GPL v3
 #ifndef NODE_LOG
 #define NODE_LOG
 
-#define NEAR_ZERO 0.000001
-
 #include "nodeDx.h"
 
 namespace FT{
@@ -14,7 +12,7 @@ namespace FT{
     {
     	public:
     	
-    		NodeLog()
+    		NodeLog(vector<double> W0 = vector<double>())
        		{
     			name = "log";
     			otype = 'f';
@@ -22,9 +20,14 @@ namespace FT{
     			arity['b'] = 0;
     			complexity = 4;
 
-                for (int i = 0; i < arity['f']; i++) {
-                    W.push_back(1);
+                if (W0.empty())
+                {
+                    for (int i = 0; i < arity['f']; i++) {
+                        W.push_back(r.rnd_dbl());
+                    }
                 }
+                else
+                    W = W0;
     		}
 
             /// Safe log: pushes log(abs(x)) or MIN_DBL if x is near zero. 
@@ -32,7 +35,7 @@ namespace FT{
                           const std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > > &Z, 
 			              Stacks& stack)
 			{
-                ArrayXd x = stack.f.pop();
+           		ArrayXd x = stack.f.pop();
                 stack.f.push( (abs(x) > NEAR_ZERO).select(log(abs(W[0] * x)),MIN_DBL));
             }
 

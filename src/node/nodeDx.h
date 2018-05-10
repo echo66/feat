@@ -7,7 +7,10 @@
 // Need to remember for implementing auto-backprop that the arguments are in reverse order (top of the stack is the last argument)
 
 namespace FT{
-	class NodeDx : public Node
+    
+    extern Rnd r;   // forward declaration of random number generator
+
+    class NodeDx : public Node
     {
     	public:
     		std::vector<double> W;
@@ -23,28 +26,20 @@ namespace FT{
 
             void update(vector<ArrayXd>& gradients, vector<ArrayXd>& stack_f, double n) 
             {
-                std::cout << "+++++++++++++++++++++++++++++\n";
-                std::cout << "Updating " << this->name << "\n";
+                // Compute chain rule
                 ArrayXd update_value = ArrayXd::Ones(stack_f[0].size());
                 for(ArrayXd g : gradients) {
-                    std::cout << "Using gradient: " << g << "\n";
                     update_value *= g;
                 }
 
-                // Update all weights
-                // std::cout << "Update value: " << update_value << "\n";
-                // std::cout << "Input: " << stack_f[stack_f.size() - 1] << "\n";
-                vector<double> W_temp(W);	// Have to use temporary weights so as not to compute updates with updated weights
+                // Update all weights with respective derivatives
+                // Have to use temporary weights so as not to compute updates with updated weights
+                vector<double> W_temp(W);	
                 for (int i = 0; i < arity['f']; ++i) {
                 	ArrayXd d_w = getDerivative(stack_f, arity['f'] + i);
-                    // std::cout << "Derivative: " << d_w << "\n";
                 	W_temp[i] = W[i] - n/update_value.size() * (d_w * update_value).sum();
-                    // std::cout << "Updated with " << (d_w * update_value).sum() << "\n";
                 }
                 this->W = W_temp;
-                std::cout << "Updated\n";
-                std::cout << "+++++++++++++++++++++++++++++\n";
-                // print_weight();
             }
 
             void print_weight()

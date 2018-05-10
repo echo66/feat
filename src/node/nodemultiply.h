@@ -12,7 +12,7 @@ namespace FT{
     {
     	public:
     	
-    		NodeMultiply()
+    		NodeMultiply(vector<double> W0 = vector<double>())
        		{
     			name = "*";
     			otype = 'f';
@@ -20,9 +20,14 @@ namespace FT{
     			arity['b'] = 0;
     			complexity = 2;
 
-                for (int i = 0; i < arity['f']; i++) {
-                    W.push_back(1);
+                if (W0.empty())
+                {
+                    for (int i = 0; i < arity['f']; i++) {
+                        W.push_back(r.rnd_dbl());
+                    }
                 }
+                else
+                    W = W0;
     		}
 
             /// Evaluates the node and updates the stack states. 
@@ -30,7 +35,7 @@ namespace FT{
                           const std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > > &Z, 
 			              Stacks& stack)
             {
-                stack.f.push(limited(W[1]*stack.f.pop() * W[0]*stack.f.pop()));
+                stack.f.push(limited(W[0]*stack.f.pop() * W[1]*stack.f.pop()));
             }
 
             /// Evaluates the node symbolically
@@ -41,15 +46,15 @@ namespace FT{
 
             ArrayXd getDerivative(vector<ArrayXd>& stack_f, int loc) {
                 switch (loc) {
-                    case 3: 
+                    case 3: // d/dW[1]
                         return stack_f[stack_f.size()-1] * this->W[0] * stack_f[stack_f.size()-2];
-                    case 2: 
+                    case 2: // d/dW[0] 
                         return stack_f[stack_f.size()-1] * this->W[1] * stack_f[stack_f.size()-2];
-                    case 1:
-                        return this->W[0] * this->W[1] * stack_f[stack_f.size() - 1];
-                    case 0:
+                    case 1: // d/dx2
+                        return this->W[0] * this->W[1] * stack_f[stack_f.size() - 2];
+                    case 0: // d/dx1
                     default:
-                        return this->W[1] * this->W[0] * stack_f[stack_f.size() - 2];
+                        return this->W[1] * this->W[0] * stack_f[stack_f.size() - 1];
                 } 
             }
 

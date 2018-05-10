@@ -12,7 +12,7 @@ namespace FT{
     {
     	public:
     	
-    		NodeSign()
+    		NodeSign(vector<double> W0 = vector<double>())
             {
                 name = "sign";
     			otype = 'f';
@@ -20,9 +20,14 @@ namespace FT{
     			arity['b'] = 0;
     			complexity = 1;
 
-                for (int i = 0; i < arity['f']; i++) {
-                    W.push_back(1);
+                if (W0.empty())
+                {
+                    for (int i = 0; i < arity['f']; i++) {
+                        W.push_back(r.rnd_dbl());
+                    }
                 }
+                else
+                    W = W0;
     		}
     		
             /// Evaluates the node and updates the stack states. 
@@ -31,7 +36,7 @@ namespace FT{
 			              Stacks& stack)
             {
         		ArrayXd x = stack.f.pop();
-        	    ArrayXd::Ones ones(s.size());
+        	    ArrayXd ones = ArrayXd::Ones(x.size());
 
         		ArrayXd res = (W[0] * x > 0).select(ones, 
                                                     (x == 0).select(ArrayXd::Zero(x.size()), 
@@ -45,7 +50,7 @@ namespace FT{
                 stack.fs.push("sign("+ stack.fs.pop() +")");
             }
 
-            ArrayXd getDerivative(vector<ArrayXd>& gradients, vector<ArrayXd>& stack_f, int loc) {
+            ArrayXd getDerivative(vector<ArrayXd>& stack_f, int loc) {
                 // Might want to experiment with using a perceptron update rule or estimating with some other function
                 switch (loc) {
                     case 1: // d/dw0

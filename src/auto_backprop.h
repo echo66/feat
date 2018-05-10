@@ -5,7 +5,7 @@
 #include <iostream>
 #include <map>
 #include <vector>
-
+#include "nodevector.h"
 #include "stack.h"
 #include "node/node.h"
 #include "node/nodeDx.h"
@@ -22,18 +22,47 @@ Remove from consideration non-differentiable parts of tree
 */
 
 namespace FT {
-	class Auto_backprop {
-	// public:
-	typedef VectorXd (*callback)(const VectorXd&, const VectorXd&);
+	class AutoBackProp 
+    {
+        /* @class AutoBackProp
+         * @brief performs back propagation on programs to adapt weights.
+         */
+	public:
+	
+        typedef VectorXd (*callback)(const VectorXd&, const VectorXd&);
+        
+        AutoBackProp(callback d_cost_func, int iters=1000, double n=0.1, int store_optimal=0, callback cost_func=NULL) 
+        {
+			this->d_cost_func = d_cost_func;
+			this->iters = iters;
+			this->n = n;
+			this->STORE = store_optimal;
+			this->cost_func = cost_func;
+		}
+        /// adapt weights
+		void run(NodeVector& program, MatrixXd& X, VectorXd& y,
+                 std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z);
+
+        /* ~AutoBackProp() */
+        /* { */
+        /*     /1* for (const auto& p: program) *1/ */
+        /*         /1* p = nullptr; *1/ */
+        /* } */
+
 
 	private:
-		double n; // Learning rate
-		callback d_cost_func;
-		MatrixXd X;
-		VectorXd labels;
-		int iters;
-		FT::NodeVector programToReturn;
-		vector<Node*> program;
+		double n;                   //< learning rate
+		callback d_cost_func;       //< derivative of cost function pointer
+        callback cost_func;         //< cost function pointer
+        int iters;                  //< iterations
+        int STORE;					//< flag for storing best weights
+
+        struct WEIGHT_BUNDLE {
+        	vector<vector<double>> weights;
+        	double cost;
+        };
+
+        WEIGHT_BUNDLE BEST_W;
 
 		struct BP_NODE
 		{
@@ -41,181 +70,48 @@ namespace FT {
 			vector<ArrayXd> deriv_list;
 		};
 
-		void print_weights() {
-			std::cout << "************WEIGHTS************\n";
-			for (Node* p : this->program) {
-				std::cout << "Node: " << p->name;
+		void print_weights(NodeVector& program) {
+			for (const auto& p : program) {
 				if (isNodeDx(p)) {
-					NodeDx* dNode = dynamic_cast<NodeDx*>(p);
-					std::cout << " with weight";
-					for (int i = 0; i < dNode->arity['f']; i++) {
-						std::cout << " " << dNode->W[i];
-					}
+					NodeDx* dNode = dynamic_cast<NodeDx*>(p.get());
+                    dNode->print_weight();
+                    dNode = nullptr;
+				} else {
+					cout << "Node: " << p->name;
 				}
-				std::cout << "\n";
+				cout << "\n";
 			}
 			std::cout << "*******************************\n";
 		}
 
-		// Return the f_stack
-		vector<ArrayXd> forward_prop() 
-		{
-			std::cout << "Forward pass\n";
-			// Iterate through all the nodes evaluating and tracking ouputs
-			vector<ArrayXd> stack_f; // Tracks output values
+		/// Return the f_stack
+		vector<ArrayXd> forward_prop(NodeVector& program, int start, int end, 
+                                     MatrixXd& X, VectorXd& y, 
+                               std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z);
 
-			FT::Stacks stack;
-			std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > > z; 
+		/// Updates stacks to have proper value on top
+		void next_branch(vector<BP_NODE>& executing, vector<Node*>& bp_program, 
+                         vector<ArrayXd>& derivatives);
 
-			// Use stack_f and execution stack to avoid issue of branches affecting what elements appear before a node 
-			for (Node* p : this->program) { // Can think about changing with call to Node for cases with nodes that aren't differentiable
-				std::cout << "Evaluating node: " << p->name << "\n";
-				for (int i = 0; i < p->arity['f']; i++) {
-					stack_f.push_back(stack.f.at(stack.f.size() - (p->arity['f'] - i)));
-				}
+		/// Removes the substree associated with a non-differentiable node from the tree
+		void cleanNonDif(vector<Node*>& bp_program);
 
-				p->evaluate(this->X, this->labels, z, stack);
-				p->visits = 0;
-			}
+        /// Compute gradients and update weights 
+		void backprop(vector<ArrayXd>& f_stack, NodeVector& program, int start, int end,
+                      MatrixXd& X, VectorXd& y, 
+                               std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z);
 
-			stack_f.push_back(stack.f.pop());
+		// Updates the current "best program" found
+		void update_best(double cost, NodeVector& program, int start, int end);
 
-			std::cout << "Returning forward pass.\n";
-			return stack_f;
-		}
+        /// check if differentiable node    
+        bool isNodeDx(Node* n){ return NULL != dynamic_cast<NodeDx*>(n); }
 
-		// Updates stacks to have proper value on top
-		void next_branch(vector<BP_NODE>& executing, vector<Node*>& bp_program, vector<ArrayXd>& derivatives) {
-			std::cout << "Seeking next branch\n";
-			// While there are still nodes with branches to explore
-			if(!executing.empty()) {
-				std::cout << "Searching up tree\n";
-				// Declare variable to hold node and its associated derivatives
-				BP_NODE bp_node = pop<BP_NODE>(&executing); // Check first element
-	            // Loop until branch to explore is found
-	            while (bp_node.deriv_list.empty() && !executing.empty()) {
-	            	std::cout << "Going up one parent\n";
-	                bp_node = pop<BP_NODE>(&executing); // Get node and its derivatves
-
-	                // For some reason this function is not removing element from the stack
-	                pop<ArrayXd>(&derivatives); // Remove associated gradients from stack
-	                if (executing.empty()) {
-	                    return;
-	                }
-	            }
-	            
-	            // Should now have the next parent node and derivatves (stored in bp_node)
-	            if (!bp_node.deriv_list.empty()) {
-	            	bp_program.push_back(bp_node.n);
-	            	derivatives.push_back(pop_front<ArrayXd>(&(bp_node.deriv_list))); // Pull derivative from front of list due to how we stored them earlier
-	            	executing.push_back(bp_node); // Push it back on the stack in order to sync all the stacks
-	            }
-			}
-		}
-
-		// Compute gradients and update weights 
-		void backprop(vector<ArrayXd> f_stack) {
-			std::cout << "===============++BACKPROP++===============\n";
-			vector<ArrayXd> derivatives;
-			derivatives.push_back(this->d_cost_func(this->labels, f_stack[f_stack.size() - 1])); // Might need a cost function node (still need to address this)
-			std::cout << "Cost derivative: " << this->d_cost_func(this->labels, f_stack[f_stack.size() - 1]) << "\n"; // Working according to test program
-			pop<ArrayXd>(&f_stack); // Get rid of input to cost function
-
-			vector<BP_NODE> executing; // Stores node and its associated derivatves
-			// Currently I don't think updates will be saved, might want a pointer of nodes so don't have to restock the list
-			vector<Node*> bp_program(this->program); // Program we loop through and edit during algorithm (is this a shallow or deep copy?)
-
-			while (bp_program.size() > 0) {
-				std::cout << "---------------++Loop++---------------\n";
-				Node* node = pop<Node*>(&bp_program);
-				// std::cout << "Size of program: " << bp_program.size() << "\n";
-				std::cout << "Evaluating: " << node->name << "\n";
-				// print_weights();
-
-				vector<ArrayXd> n_derivatives;
-
-				if (isNodeDx(node) && node->visits == 0 && node->arity['f'] > 0) {
-					std::cout << "differentiable!\n";
-					NodeDx* dNode = dynamic_cast<NodeDx*>(node); // Could probably put this up one and have the if condition check if null
-					// Calculate all the derivatives and store them, then update all the weights and throw away the node
-					for (int i = 0; i < node->arity['f']; i++) {
-						dNode->derivative(n_derivatives, f_stack, i);
-					}
-
-					dNode->update(derivatives, f_stack, this->n);
-					// dNode->print_weight();
-
-					// Get rid of the input arguments for the node
-					for (int i = 0; i < dNode->arity['f']; i++) {
-						pop<ArrayXd>(&f_stack);
-					}
-
-					if (!n_derivatives.empty()) {
-						derivatives.push_back(pop_front<ArrayXd>(&n_derivatives));
-					}
-
-					executing.push_back({dNode, n_derivatives});
-				}
-
-				// Choosing how to move through tree
-				if (node->arity['f'] == 0) {
-					std::cout << "Non updateable node\n";
-					// Clean up gradients and find the parent node
-					pop<ArrayXd>(&derivatives);	// TODO check if this fixed
-					next_branch(executing, bp_program, derivatives);
-				} else if (!isNodeDx(node)) {
-					// Have to remove the elements associated with the non differentiable nodes from the stack
-					cleanNonDif(bp_program);
-					next_branch(executing, bp_program, derivatives);
-				} else {
-					std::cout << "Updateable\n";
-					node->visits += 1;
-					if (node->visits > node->arity['f']) {
-						next_branch(executing, bp_program, derivatives);
-					}
-				}
-				std::cout << "--------------------------------------\n";
-			}
-
-			// std::cout << "Backprop terminated\n";
-			std::cout << "===============END BACKPROP===============\n";
-			print_weights();
-		}
-
-		void cleanNonDif(vector<Node*>& bp_program) {
-			// Starting from node, remove arguments from the queue that would have been in the non-differentiable branch
-			std::cout << "Traversing full current branch and seeking next branch\n";
-			// While there are still nodes with branches to explore
-			std::cout << "Searching down tree\n";
-			vector<Node*> executing;
-			while (bp_program.size() > 0) {
-				Node* node = pop<Node*>(&bp_program);
-
-				std::cout << "Iteration with " << node->name << "\n";
-				if (node->arity['f'] == 0) { // Might need to add code to check for bool arity
-					std::cout << "No arity\n";
-					if (executing.empty())
-						return;
-					bp_program.push_back(pop<Node*>(&executing));
-				} else {
-					node->visits++;
-					std::cout << "Arity\n";
-					if (node->visits > node->arity['f']) {
-						if (executing.empty())
-							return;
-						std::cout << "Pushing from exec stack\n";
-						bp_program.push_back(pop<Node*>(&executing));
-					} else {
-						std::cout << "Adding to exec\n";
-						executing.push_back(node);
-					}
-				}
-			}
-		}
-
-		bool isNodeDx(Node* n) {
-			// std::cout << "IsNodeDx? - " << dynamic_cast<NodeDx*>(n) << " gives " << (NULL != dynamic_cast<NodeDx*>(n)) << "\n";
-			return NULL != dynamic_cast<NodeDx*>(n);
+		bool isNodeDx(const std::unique_ptr<Node>& n) {
+            Node * tmp = n.get();
+			bool answer = isNodeDx(tmp); 
+            tmp = nullptr;
+            return answer;
 		}
 
 		template <class T>
@@ -231,95 +127,322 @@ namespace FT {
 			v->erase(v->begin());
 			return value;
 		}
-
-		FT::NodeVector wrapToNodeVector(vector<Node*> tuned_program) {
-			FT:NodeVector wrapped;
-			for (Node* n : tuned_program) {
-				wrapped.push_back(unique_ptr<Node>(n));
-			}
-
-			return wrapped;
-		}
-
-		void updateNodeVector() {
-			// for (int i = 0; i < this->programToReturn.size(); i++) {
-			// 	unique_ptr<Node>& n1 = this->programToReturn[i];
-			// 	Node* n2 = this->program[i];
-			// 	std::cout << "Node: " << n1->name << " and " << n2->name << "\n";
-			// 	if (isNodeDx(n2)) {
-			// 		NodeDx* dNode = dynamic_cast<NodeDx*>(n2);
-			// 		std::cout << " with weight";
-			// 		for (int i = 0; i < dNode->arity['f']; i++) {
-			// 			std::cout << " " << dNode->W[i];
-			// 		}
-			// 	}
-			// 	std::cout << "\n";
-			// }
-
-			this->programToReturn.clear();
-			for (int i = 0; i < this->program.size(); i++) {
-				this->programToReturn.push_back(unique_ptr<Node>(this->program[i]));
-				// Node* n2 = this->program[i];
-				// std::cout << "Node: " << n1->name << " and " << n2->name << "\n";
-				// if (isNodeDx(n2)) {
-				// 	NodeDx* dNode = dynamic_cast<NodeDx*>(n2);
-				// 	std::cout << " with weight";
-				// 	for (int i = 0; i < dNode->arity['f']; i++) {
-				// 		std::cout << " " << dNode->W[i];
-				// 	}
-				// }
-			}
-
-		}
-
-		vector<Node*> convertToNodes(FT::NodeVector& program) {
-			vector<Node*> nodes;
-			for (unique_ptr<Node>& n : program) {
-				Node* node = n.get();
-				nodes.push_back(node);
-			}
-
-			for (Node* n : this->program) {
-				std::cout << "Program actual log: " << n->name << "\n";
-			}
-
-			return nodes;
-		}
-
-	public:
-		Auto_backprop(FT::NodeVector& program, callback d_cost_func, MatrixXd X, VectorXd labels, int iters=1000, double n=0.1) {
-			this->programToReturn = program;
-			this->program = convertToNodes(program);
-			for (Node* n : this->program) {
-				std::cout << "Returned: " << n->name << "\n";
-			}
-			this->d_cost_func = d_cost_func;
-			this->X = X;
-			this->labels = labels;
-			this->iters = iters;
-			this->n = n;
-		}
-
-		void run() 
-		{
-			std::cout << "Starting up Auto_backprop with " << this->iters << " iterations.";
-			// Computes weights via backprop
-	        for (int x = 0; x < this->iters; x++) {
-	        	// Evaluate forward pass
-	        	vector<ArrayXd> stack_f = forward_prop();
-	            // if ((x % round(this->iters/4)) == 0 or x == this->iters - 1) {
-	            // 	std::cout << "Iters are happening!\n"; // print("Currently on iter: " + str(x)); // TODO change to C++ print statement
-	            // }
-	            
-	            // Evaluate backward pass
-	            backprop(stack_f);
-	        }
-	        std::cout << "----------------AutoDiff Finished----------------\n";
-	        updateNodeVector();
-	        std::cout << "-------------------------------------------------\n";
-	        //return wrapToNodeVector(this->program);
-		}
 	};
+
+/////////////////////////////////////////////////////////////////////////////////////// Definitions
+    // adapt weights 
+    void AutoBackProp::run(NodeVector& program, MatrixXd& X, VectorXd& y, 
+                            std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z)
+    {
+    	/*!
+        * Finds weights for an input program that increase the performance of the model
+            
+        * Input:
+          
+        *		program, a NodeVector of the nodes that will be evaluated
+        *		X, the input data to train on
+        *		y, the labels to use when evaluating error
+        *		Z, TODO
+            
+        * Output:
+           
+        *		The method operates in place, and thus the "output" is the input program with updated weights
+          
+        * note that the function only updates weights for differentable nodes and will completelt skip subtrees of the program if the root node is not differentiable
+        */
+        // Initialialize struct for tracking best weights if using that option
+        if (this->STORE) {
+        	this->BEST_W.weights = vector<vector<double>>(program.size());
+        	for (int i = 0; i < program.size(); i++) {
+        		Node* n = program[i].get();
+	    		if (isNodeDx(n)) {
+	    			NodeDx* dNode = dynamic_cast<NodeDx*>(n);
+	    			this->BEST_W.weights[i] = vector<double>(dNode->arity['f']);
+	    			for (int j = 0; j < dNode->arity['f']; j++)
+	    				this->BEST_W.weights[i][j] = dNode->W[j];
+	    		}
+        	}
+        	this->BEST_W.cost = 0;
+        }
+
+        cout << "Starting up AutoBackProp with " << this->iters << " iterations.";
+        // Computes weights via backprop
+        // grab subtrees to backprop over
+        for (int s : program.roots())
+        {
+            if (isNodeDx(program[s]))
+            {
+            	// Could save on computation by storing the output of program.substree()
+                cout << "\ntraining sub-program " << program.subtree(s) << " to " << s << "\n";
+                cout << "\nIteration\tLoss\tGrad\t\n";
+                for (int x = 0; x < this->iters; x++) {
+                    // Evaluate forward pass 
+                    vector<ArrayXd> stack_f = forward_prop(program, program.subtree(s), s, X, y, Z);
+                    ArrayXd output = stack_f[stack_f.size() - 1];
+                    // if ((x % round(this->iters/4)) == 0 or x == this->iters - 1) {
+                    // }
+                    cout << x << "\t" 
+                         << (y.array()-stack_f[stack_f.size() - 1]).array().pow(2).mean() << "\t"
+                         << this->d_cost_func(y, stack_f[stack_f.size() - 1]).mean() << "\n"; 
+                    
+                    // Evaluate backward pass
+                    backprop(stack_f, program, program.subtree(s), s, X, y, Z);  
+                }
+            }
+        }
+        cout << "Finished backprop. returning program:\n";
+        print_weights(program);    
+        /* return this->program; */
+    }
+    
+    // Return the f_stack
+    vector<ArrayXd> AutoBackProp::forward_prop(NodeVector& program, int start, int end, 
+                                                MatrixXd& X, VectorXd& y, 
+                               std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z) 
+    {
+        /*!
+        * Computes and stores the results of each node in the program in a manner convenient for backprop
+            
+        * Input:
+          
+        *		program, a NodeVector of the nodes that will be evaluated
+        *		start, the index of the first node to consdier
+        *		end, the index of the last node to consider
+        *		X, the input data to train on
+        *		y, the labels to use when evaluating error
+        *		Z, TODO
+            
+        * Output:
+           
+        *		stack_f, an ordered list of output values
+          
+        * note that the returned list groups inputs so that the tree structure of the program can be avoided in the backprop step.
+        * The returned list groups values in the form [input1, input2, ...] thus for each node there will be arity elements on the returned stack
+        * The top element of the stack should correspond to the input to the cost function
+        */
+
+        // Iterate through all the nodes evaluating and tracking inputs and corresponding ouputs
+        vector<ArrayXd> stack_f; // Tracks output values
+        FT::Stacks stack;
+
+        // Use stack_f and execution stack to avoid issue of branches affecting what elements 
+        // appear before a node 
+        for (int s = start; s <= end; ++s) 
+        {
+        	// Place the inputs on the stack to return
+            for (int i = 0; i < program[s]->arity['f']; i++) {
+                stack_f.push_back(stack.f.at(stack.f.size() - (program[s]->arity['f'] - i)));
+            }
+
+            program[s]->evaluate(X, y, Z, stack);
+            program[s]->visits = 0;
+        }
+        stack_f.push_back(stack.f.pop());
+
+        if (this->STORE) {
+        	double cost = this->cost_func(y, stack_f[stack_f.size() - 1]).sum();
+        	if (this->BEST_W.cost < cost) {
+        		update_best(cost, program, start, end);
+        	}
+        	
+        }
+
+        return stack_f;
+    }
+    
+    // Updates stacks to have proper value on top
+    void AutoBackProp::next_branch(vector<BP_NODE>& executing, vector<Node*>& bp_program, 
+                                   vector<ArrayXd>& derivatives) 
+    {
+    	/*!
+        * Find the next node to continue computation from after reaching the bottom of a program branch
+            
+        * Input:
+          
+        *		executing, the list of nodes that have unexplored branches grouped with their corresponding derivatives
+        *		bp_program, the list of nodes that will be evaluated by backprop
+        *		derivatives, the current list of derivatives contributing to the chain rule used in backprop
+            
+        * Output:
+           
+        *		The function operates in place on the three input arguments, returning them in a state that allows backprop to continue running
+        */
+
+        // While there are still nodes with branches to explore
+        if(!executing.empty()) {
+            // Declare variable to hold node and its associated derivatives
+            BP_NODE bp_node = pop<BP_NODE>(&executing); // Check first element
+            // Loop until branch to explore is found
+            while (bp_node.deriv_list.empty() && !executing.empty()) {
+                bp_node = pop<BP_NODE>(&executing); // Get node and its derivatves
+
+                pop<ArrayXd>(&derivatives); // Remove associated gradients from stack
+                if (executing.empty()) {
+                    return;
+                }
+            }
+            
+            // Should now have the next parent node and derivatves (stored in bp_node)
+            if (!bp_node.deriv_list.empty()) 
+            {
+                bp_program.push_back(bp_node.n);
+                // Pull derivative from front of list due to how we stored them earlier
+                derivatives.push_back(pop_front<ArrayXd>(&(bp_node.deriv_list)));                 
+                // Push it back on the stack in order to sync all the stacks
+                executing.push_back(bp_node);             
+            }
+        }
+    }
+
+    void AutoBackProp::cleanNonDif(vector<Node*>& bp_program) 
+    {
+    	/*!
+        * Removes program tree rooted by current node at top of list
+            
+        * Input:
+          
+        *		bp_program, list of nodes currently being consdiered by backprop with a non-differentiable node at the head of the stack
+            
+        * Output:
+           
+        *		The method operates in place, and thus the "output" is the input program with updated structure so that the tree rooted at the non-differentiable node is removed
+          
+        * note that the current version of the method fails to account for input nodes that are not specified in the 'f' arity. 
+        */
+
+		// Starting from node, remove arguments from the queue that would have been in the non-differentiable branch
+		// While there are still nodes with branches to explore
+		vector<Node*> executing;
+		while (bp_program.size() > 0) {
+			Node* node = pop<Node*>(&bp_program);
+			if (node->arity['f'] == 0) { // Might need to add code to check for bool arity
+				if (executing.empty())
+					return;
+				bp_program.push_back(pop<Node*>(&executing));
+			} else {
+				node->visits++;
+				if (node->visits > node->arity['f']) {
+					if (executing.empty())
+						return;
+					bp_program.push_back(pop<Node*>(&executing));
+				} else {
+					executing.push_back(node);
+				}
+			}
+		}
+	}
+
+    // Compute gradients and update weights 
+    void AutoBackProp::backprop(vector<ArrayXd>& f_stack, NodeVector& program, int start, int end, 
+                                MatrixXd& X, VectorXd& y, 
+                                std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > >& Z)    
+    {
+    	/*!
+        * Iterates over the nodes in the program, updating their values in accordance with the results of the forward pass specified by f_stack
+            
+        * Input:
+          
+        *		f_stack, the list of values that resulted from the forward pass
+        *		program, the list of nodes describing the program
+        *		start, the index of the first node to consider
+        *		end, the index of the last node to consider
+        *		X, input data used for training
+        *		y, labels which the program will try to converge to
+        *		Z, TODO
+            
+        * Output:
+           
+        *		The method operates in place, and thus the "output" is the input program with updated weights
+          
+        * note that the function only updates weights for differentable nodes and will completelt skip subtrees of the program if the root node is not differentiable
+        */
+
+        /* cout << "Backward pass \n"; */ 
+        vector<ArrayXd> derivatives;
+        derivatives.push_back(this->d_cost_func(y, f_stack[f_stack.size() - 1])); 
+        // Might need a cost function node (still need to address this)
+        // cout << "Cost derivative: " << this->d_cost_func(y, f_stack[f_stack.size() - 1]) << "\n"; 
+        // Working according to test program 
+        pop<ArrayXd>(&f_stack); // Get rid of input to cost function
+        vector<BP_NODE> executing; // Stores node and its associated derivatves
+        // Currently I don't think updates will be saved, might want a pointer of nodes so don't 
+        // have to restock the list
+        // Program we loop through and edit during algorithm (is this a shallow or deep copy?)
+        /* cout << "copy program \n"; */
+        vector<Node*> bp_program = program.get_data(start, end);         
+        while (bp_program.size() > 0) {
+            /* cout << "Size of program: " << bp_program.size() << "\n"; */
+            Node* node = pop<Node*>(&bp_program);
+            /* cout << "(132) Evaluating: " << node->name << "\n"; */
+            /* print_weights(program); */
+
+            vector<ArrayXd> n_derivatives;
+
+            if (isNodeDx(node) && node->visits == 0 && node->arity['f'] > 0) {
+                NodeDx* dNode = dynamic_cast<NodeDx*>(node); // Could probably put this up one and have the if condition check if null
+                /* cout << "evaluating derivative\n"; */
+                // Calculate all the derivatives and store them, then update all the weights and throw away the node
+                for (int i = 0; i < node->arity['f']; i++) {
+                    dNode->derivative(n_derivatives, f_stack, i);
+                }
+                /* cout << "updating derivatives\n"; */
+                dNode->update(derivatives, f_stack, this->n);
+                // dNode->print_weight();
+                /* cout << "popping input arguments\n"; */
+                // Get rid of the input arguments for the node
+                for (int i = 0; i < dNode->arity['f']; i++) {
+                    pop<ArrayXd>(&f_stack);
+                }
+
+                if (!n_derivatives.empty()) {
+                    derivatives.push_back(pop_front<ArrayXd>(&n_derivatives));
+                }
+
+                executing.push_back({dNode, n_derivatives});
+            }
+
+            /* cout << "next branch\n"; */
+            // Choosing how to move through tree
+			if (node->arity['f'] == 0) {
+				// Clean up gradients and find the parent node
+				pop<ArrayXd>(&derivatives);
+				next_branch(executing, bp_program, derivatives);
+			} else if (!isNodeDx(node)) {
+				// Have to remove the elements associated with the non differentiable nodes from the stack
+				cleanNonDif(bp_program);
+				next_branch(executing, bp_program, derivatives);
+			} else {
+				node->visits += 1;
+				if (node->visits > node->arity['f']) {
+					next_branch(executing, bp_program, derivatives);
+				}
+			}
+        }
+
+        // point bp_program to null
+        for (unsigned i = 0; i < bp_program.size(); ++i)
+            bp_program[i] = nullptr;
+
+        //print_weights(program);
+    }
+
+    void AutoBackProp::update_best(double cost, NodeVector& program, int start, int end) {
+    	if (cost > this->BEST_W.cost)
+    		return;
+
+    	this->BEST_W.cost = cost;
+
+    	for (int i = 0; i < end - start; i++) {
+    		Node* n = program[start + i].get();
+    		if (isNodeDx(n)) {
+    			NodeDx* dNode = dynamic_cast<NodeDx*>(n);
+    			for (int j = 0; j < dNode->arity['f']; j++)
+    				this->BEST_W.weights[start + i][j] = dNode->W[j];
+    		}
+    		
+    	}
+    	
+    }
 }
 
 #endif

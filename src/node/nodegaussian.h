@@ -12,7 +12,7 @@ namespace FT{
     {
     	public:
     	
-    		NodeGaussian()
+    		NodeGaussian(vector<double> W0 = vector<double>())
             {
                 name = "gaussian";
     			otype = 'f';
@@ -20,9 +20,14 @@ namespace FT{
     			arity['b'] = 0;
     			complexity = 4;
 
-                for (int i = 0; i < arity['f']; i++) {
-                    W.push_back(1);
+                if (W0.empty())
+                {
+                    for (int i = 0; i < arity['f']; i++) {
+                        W.push_back(r.rnd_dbl());
+                    }
                 }
+                else
+                    W = W0;
     		}
     		
             /// Evaluates the node and updates the stack states. 
@@ -36,7 +41,6 @@ namespace FT{
             /// Evaluates the node symbolically
             void eval_eqn(Stacks& stack)
             {
-        		string x = stack.fs.pop();
                 stack.fs.push("exp(-(" + stack.fs.pop() + " ^ 2))");
             }
 

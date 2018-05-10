@@ -12,7 +12,7 @@ namespace FT{
     {
     	public:
     	
-    		NodeSquare()
+    		NodeSquare(vector<double> W0 = vector<double>())
     		{
     			name = "^2";
     			otype = 'f';
@@ -20,9 +20,14 @@ namespace FT{
     			arity['b'] = 0;
     			complexity = 2;
 
-                for (int i = 0; i < arity['f']; i++) {
-                    W.push_back(1);
+                if (W0.empty())
+                {
+                    for (int i = 0; i < arity['f']; i++) {
+                        W.push_back(r.rnd_dbl());
+                    }
                 }
+                else
+                    W = W0;
     		}
     		
             /// Evaluates the node and updates the stack states. 
@@ -30,7 +35,7 @@ namespace FT{
                           const std::map<string, std::pair<vector<ArrayXd>, vector<ArrayXd> > > &Z, 
 			              Stacks& stack)
             {
-                stack.f.push(pow(W[0]*stack.f.pop(),2));
+                stack.f.push(limited(pow(W[0]*stack.f.pop(),2)));
             }
 
             /// Evaluates the node symbolically
