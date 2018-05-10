@@ -16,6 +16,8 @@ using Eigen::VectorXd;
 typedef Eigen::Array<bool,Eigen::Dynamic,1> ArrayXb;
 
 /*
+NOTE Currently the algorithm doesn't seem to correctly computing weights past the first iteration. Noted a discrepancy in the cost function for the second iteration even though the weights were the same (this was holding the weight of the node to 1)
+
 Potential Optimization: 
 Check for non differentiable root at start
 Remove from consideration non-differentiable parts of tree
@@ -217,7 +219,8 @@ namespace FT {
         *		stack_f, an ordered list of output values
           
         * note that the returned list groups inputs so that the tree structure of the program can be avoided in the backprop step.
-        * The returned list groups values in the form [input1, input2, ...] thus for each node there will be arity elements on the returned stack
+        * The returned list groups values in the form [[input1, input2], [input1, input2], ...] where each [...] represents the inputs needed to evaluate a node
+        * For each node there will be arity elements on the returned stack
         * The top element of the stack should correspond to the input to the cost function
         */
 
@@ -357,38 +360,28 @@ namespace FT {
         * note that the function only updates weights for differentable nodes and will completelt skip subtrees of the program if the root node is not differentiable
         */
 
-        /* cout << "Backward pass \n"; */ 
         vector<ArrayXd> derivatives;
         derivatives.push_back(this->d_cost_func(y, f_stack[f_stack.size() - 1])); 
         // Might need a cost function node (still need to address this)
-        // cout << "Cost derivative: " << this->d_cost_func(y, f_stack[f_stack.size() - 1]) << "\n"; 
         // Working according to test program 
         pop<ArrayXd>(&f_stack); // Get rid of input to cost function
         vector<BP_NODE> executing; // Stores node and its associated derivatves
         // Currently I don't think updates will be saved, might want a pointer of nodes so don't 
         // have to restock the list
         // Program we loop through and edit during algorithm (is this a shallow or deep copy?)
-        /* cout << "copy program \n"; */
         vector<Node*> bp_program = program.get_data(start, end);         
         while (bp_program.size() > 0) {
-            /* cout << "Size of program: " << bp_program.size() << "\n"; */
             Node* node = pop<Node*>(&bp_program);
-            /* cout << "(132) Evaluating: " << node->name << "\n"; */
-            /* print_weights(program); */
-
             vector<ArrayXd> n_derivatives;
 
             if (isNodeDx(node) && node->visits == 0 && node->arity['f'] > 0) {
                 NodeDx* dNode = dynamic_cast<NodeDx*>(node); // Could probably put this up one and have the if condition check if null
-                /* cout << "evaluating derivative\n"; */
                 // Calculate all the derivatives and store them, then update all the weights and throw away the node
                 for (int i = 0; i < node->arity['f']; i++) {
                     dNode->derivative(n_derivatives, f_stack, i);
                 }
-                /* cout << "updating derivatives\n"; */
                 dNode->update(derivatives, f_stack, this->n);
-                // dNode->print_weight();
-                /* cout << "popping input arguments\n"; */
+
                 // Get rid of the input arguments for the node
                 for (int i = 0; i < dNode->arity['f']; i++) {
                     pop<ArrayXd>(&f_stack);
@@ -401,7 +394,6 @@ namespace FT {
                 executing.push_back({dNode, n_derivatives});
             }
 
-            /* cout << "next branch\n"; */
             // Choosing how to move through tree
 			if (node->arity['f'] == 0) {
 				// Clean up gradients and find the parent node
@@ -422,8 +414,6 @@ namespace FT {
         // point bp_program to null
         for (unsigned i = 0; i < bp_program.size(); ++i)
             bp_program[i] = nullptr;
-
-        //print_weights(program);
     }
 
     void AutoBackProp::update_best(double cost, NodeVector& program, int start, int end) {
